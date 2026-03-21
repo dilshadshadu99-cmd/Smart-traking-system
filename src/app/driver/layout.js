@@ -1,11 +1,28 @@
+'use client';
+
+import { supabase } from '@/lib/supabaseClient';
+import { useRouter } from 'next/navigation';
+
 export default function DriverLayout({ children }) {
+  const router = useRouter();
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.replace('/login');
+  };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: 'var(--bg-secondary)' }}>
-      <header style={{ background: 'var(--bg-primary)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
-        <h1 style={{ fontSize: '18px', fontWeight: '600' }}>Driver Dashboard</h1>
-        <button className="btn-secondary" style={{ padding: '8px 16px', width: 'auto', fontSize: '14px' }}>Sign out</button>
+    <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-[#0a0a0a]">
+      <header className="bg-white dark:bg-[#111] px-6 py-4 flex justify-between items-center border-b border-gray-100 dark:border-gray-800 sticky top-0 z-50">
+        <h1 className="text-lg font-bold tracking-tight">Driver Dashboard</h1>
+        <button 
+          onClick={handleSignOut}
+          className="text-sm font-medium text-gray-500 hover:text-black dark:hover:text-white transition-colors"
+        >
+          Sign out
+        </button>
       </header>
-      <main style={{ flex: 1, padding: '20px' }}>
+      <main className="flex-1 p-4 md:p-6 max-w-2xl mx-auto w-full">
         {children}
       </main>
     </div>

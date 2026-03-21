@@ -1,144 +1,46 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f8f9fa;
-  --text-primary: #1a1a1a;
-  --text-secondary: #6b7280;
-  --accent: #000000;
-  --accent-hover: #333333;
-  --border: #e5e7eb;
-  --error: #ef4444;
-  --success: #10b981;
-  --warning: #f59e0b;
-  --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --background: #ffffff;
+  --foreground: #171717;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg-primary: #121212;
-    --bg-secondary: #1e1e1e;
-    --text-primary: #f3f4f6;
-    --text-secondary: #9ca3af;
-    --accent: #ffffff;
-    --accent-hover: #e5e5e5;
-    --border: #374151;
+    --background: #0a0a0a;
+    --foreground: #ededed;
   }
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  color: var(--foreground);
+  background: var(--background);
+  font-family: Arial, Helvetica, sans-serif;
+  @apply antialiased;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
-}
+/* Base custom utilities */
+@layer components {
+  .btn-primary {
+    @apply w-full bg-black dark:bg-white text-white dark:text-black py-3 px-6 rounded-xl font-semibold transition-all hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .btn-secondary {
+    @apply w-full bg-transparent border border-gray-300 dark:border-gray-700 py-3 px-6 rounded-xl font-semibold transition-colors hover:bg-gray-100 dark:hover:bg-gray-800;
+  }
 
-button {
-  cursor: pointer;
-  border: none;
-  background: none;
-  font-family: inherit;
-}
+  .glass-card {
+    @apply bg-white/5 dark:bg-black/50 backdrop-blur-md border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-xl;
+  }
 
-input, textarea {
-  font-family: inherit;
-  border: 1px solid var(--border);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  border-radius: 8px;
-  padding: 12px 16px;
-  width: 100%;
-  outline: none;
-  transition: border-color 0.2s ease;
-}
-
-input:focus {
-  border-color: var(--accent);
-}
-
-.btn-primary {
-  background-color: var(--accent);
-  color: var(--bg-primary);
-  padding: 14px 24px;
-  border-radius: 12px;
-  font-weight: 600;
-  font-size: 16px;
-  width: 100%;
-  transition: all 0.2s ease;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 8px;
-}
-
-.btn-primary:hover {
-  background-color: var(--accent-hover);
-  transform: translateY(-1px);
-}
-
-.btn-primary:active {
-  transform: translateY(0);
-}
-
-.btn-secondary {
-  background-color: transparent;
-  color: var(--text-primary);
-  padding: 14px 24px;
-  border-radius: 12px;
-  font-weight: 600;
-  font-size: 16px;
-  width: 100%;
-  border: 1px solid var(--border);
-  transition: all 0.2s ease;
-}
-
-.btn-secondary:hover {
-  background-color: var(--bg-secondary);
-}
-
-/* Utils */
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px;
-}
-
-.fade-in {
-  animation: fadeIn 0.3s ease-in-out;
+  .fade-in {
+    animation: fadeIn 0.3s ease-in-out;
+  }
 }
 
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
-}
-
-/* Glassmorphism card */
-.glass-card {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
-  padding: 24px;
-  box-shadow: 0 10px 30px -10px rgba(0,0,0,0.1);
-}
-
-@media (prefers-color-scheme: dark) {
-  .btn-primary {
-    background-color: var(--accent);
-    color: var(--bg-primary); /* Will be black on white btn */
-  }
 }

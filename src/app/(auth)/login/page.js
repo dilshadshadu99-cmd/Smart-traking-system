@@ -1,213 +1,144 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { auth, database } from '@/lib/firebase';
-import { RecaptchaVerifier, signInWithPhoneNumber, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
-import { ref, get, set } from 'firebase/database';
+import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [method, setMethod] = useState('otp'); // 'otp' or 'magic_link'
-  const [loading, setLoading] = useState(false);
-  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
-  const [otp, setOtp] = useState('');
-  const [confirmationResult, setConfirmationResult] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [checkingSession, setCheckingSession] = useState(true);
 
-  // Magic link check on load
+  // Check ongoing session
   useEffect(() => {
-    if (isSignInWithEmailLink(auth, window.location.href)) {
-      let emailForSignIn = window.localStorage.getItem('emailForSignIn');
-      if (!emailForSignIn) {
-        emailForSignIn = window.prompt('Please provide your email for confirmation');
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        handleUserRoleRouting(session.user);
+      } else {
+        setCheckingSession(false);
       }
-      setLoading(true);
-      signInWithEmailLink(auth, emailForSignIn, window.location.href)
-        .then(async (result) => {
-          window.localStorage.removeItem('emailForSignIn');
-          await handleUserRoleRouting(result.user);
-        })
-        .catch((err) => {
-          setError(err.message);
-          setLoading(false);
-        });
-    }
+    };
+    checkUser();
+
+    // Listen for magic link completion
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        handleUserRoleRouting(session.user);
+      }
+    });
+
+    return () => authListener.subscription.unsubscribe();
   }, [router]);
 
-  const setupRecaptcha = () => {
-    if (!window.recaptchaVerifier) {
-      window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-        size: 'invisible',
-      });
-    }
-  };
-
-  const handleSendOtp = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-    
-    try {
-      setupRecaptcha();
-      const appVerifier = window.recaptchaVerifier;
-      const formattedPhone = phone.startsWith('+') ? phone : `+${phone}`;
-      const confirmation = await signInWithPhoneNumber(auth, formattedPhone, appVerifier);
-      setConfirmationResult(confirmation);
-      setMessage('OTP sent successfully!');
-    } catch (err) {
-      setError(err.message);
-      if (window.recaptchaVerifier) {
-        window.recaptchaVerifier.clear();
-        window.recaptchaVerifier = null;
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleVerifyOtp = async (e) => {
-    e.preventDefault();
-    if (!confirmationResult) return;
-    setError('');
-    setLoading(true);
-    try {
-      const result = await confirmationResult.confirm(otp);
-      await handleUserRoleRouting(result.user);
-    } catch (err) {
-      setError('Invalid OTP code. Try again.');
-      setLoading(false);
-    }
-  };
-
-  const handleSendMagicLink = async (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setMessage('');
     setLoading(true);
+
     try {
-      const actionCodeSettings = {
-        url: window.location.origin + '/login',
-        handleCodeInApp: true,
-      };
-      await sendSignInLinkToEmail(auth, email, actionCodeSettings);
-      window.localStorage.setItem('emailForSignIn', email);
-      setMessage('Magic link sent! Check your inbox.');
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/login` : undefined,
+        }
+      });
+      if (error) throw error;
+      setMessage('📬 Check your email for a Magic Link or OTP code!');
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Something went wrong');
     } finally {
       setLoading(false);
     }
   };
 
   const handleUserRoleRouting = async (user) => {
-    // Determine role (mocked or fetching from Realtime DB)
-    // To implement DB fetching:
-    const userRef = ref(database, `users/${user.uid}`);
-    let snapshot = await get(userRef);
-    let role = 'parent'; // default role
-    
-    if (snapshot.exists()) {
-      role = snapshot.val().role;
-    } else {
-      // Create user profile on first login
-      await set(userRef, { role: 'parent', phone: user.phoneNumber || null, email: user.email || null, uid: user.uid });
+    // Determine user role from our Postgres 'users' table
+    let { data, error } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    if (error && error.code === 'PGRST116') {
+      // If user doesn't exist in our custom users table yet, create a default 'parent' profile
+      await supabase.from('users').insert({ id: user.id, role: 'parent' });
+      router.push('/parent');
+      return;
     }
 
+    const role = data?.role || 'parent';
+    
     if (role === 'admin') router.push('/admin');
     else if (role === 'driver') router.push('/driver');
     else router.push('/parent');
   };
 
-  // Skip Login for demo (Bypassing auth)
   const bypassLogin = (role) => {
+    // Only for DEV testing without setting up email SMTP bounds
     router.push(`/${role}`);
   };
 
+  if (checkingSession) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-[#0a0a0a]">
+        <div className="animate-pulse text-gray-500">Checking session...</div>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-      <div className="glass-card fade-in" style={{ width: '100%', maxWidth: '400px' }}>
-        <h1 style={{ marginBottom: '8px', fontSize: '24px', fontWeight: '600', textAlign: 'center' }}>Welcome Back</h1>
-        <p style={{ marginBottom: '24px', color: 'var(--text-secondary)', textAlign: 'center', fontSize: '14px' }}>Sign in to track your school bus</p>
-        
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
-          <button 
-            className="btn-secondary" 
-            style={{ padding: '8px', fontSize: '14px', flex: 1, backgroundColor: method === 'otp' ? 'var(--bg-secondary)' : 'transparent' }}
-            onClick={() => setMethod('otp')}
-          >
-            Use SMS OTP
-          </button>
-          <button 
-            className="btn-secondary" 
-            style={{ padding: '8px', fontSize: '14px', flex: 1, backgroundColor: method === 'magic_link' ? 'var(--bg-secondary)' : 'transparent' }}
-            onClick={() => setMethod('magic_link')}
-          >
-            Use Email
-          </button>
+    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+      <div className="glass-card w-full max-w-md mx-auto fade-in">
+        <div className="text-center mb-8">
+          <h1 className="text-2xl font-bold tracking-tight mb-2">Welcome Back</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Sign in to track your school bus</p>
         </div>
 
-        {error && <div style={{ color: 'var(--error)', background: 'rgba(239, 68, 68, 0.1)', padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '14px' }}>{error}</div>}
-        {message && <div style={{ color: 'var(--success)', background: 'rgba(16, 185, 129, 0.1)', padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '14px' }}>{message}</div>}
-
-        <div id="recaptcha-container"></div>
-
-        {method === 'otp' ? (
-          <div>
-            {!confirmationResult ? (
-              <form onSubmit={handleSendOtp} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <input 
-                  type="tel" 
-                  placeholder="Phone Number (e.g. +1234567890)" 
-                  value={phone} 
-                  onChange={(e) => setPhone(e.target.value)} 
-                  required 
-                />
-                <button type="submit" className="btn-primary" disabled={loading}>
-                  {loading ? 'Sending...' : 'Send OTP code'}
-                </button>
-              </form>
-            ) : (
-              <form onSubmit={handleVerifyOtp} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <input 
-                  type="text" 
-                  placeholder="Enter 6-digit OTP" 
-                  value={otp} 
-                  onChange={(e) => setOtp(e.target.value)} 
-                  required 
-                />
-                <button type="submit" className="btn-primary" disabled={loading}>
-                  {loading ? 'Verifying...' : 'Verify & Login'}
-                </button>
-                <button type="button" onClick={() => setConfirmationResult(null)} style={{ background: 'none', color: 'var(--text-secondary)', fontSize: '14px', marginTop: '8px' }}>
-                  Change phone number
-                </button>
-              </form>
-            )}
+        {error && (
+          <div className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm mb-6">
+            {error}
           </div>
-        ) : (
-          <form onSubmit={handleSendMagicLink} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        )}
+        
+        {message && (
+          <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 text-emerald-600 dark:text-emerald-400 p-3 rounded-lg text-sm mb-6">
+            {message}
+          </div>
+        )}
+
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <label htmlFor="email" className="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">
+              Email Address
+            </label>
             <input 
+              id="email"
               type="email" 
-              placeholder="Email address" 
+              placeholder="parent@school.com" 
               value={email} 
               onChange={(e) => setEmail(e.target.value)} 
               required 
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-[#111] focus:ring-2 focus:ring-black dark:focus:ring-white focus:outline-none transition-all placeholder:text-gray-400"
             />
-            <button type="submit" className="btn-primary" disabled={loading}>
-              {loading ? 'Sending...' : 'Send Magic Link'}
-            </button>
-          </form>
-        )}
+          </div>
+          <button type="submit" className="btn-primary" disabled={loading}>
+            {loading ? 'Sending...' : 'Send Magic Link / OTP'}
+          </button>
+        </form>
 
-        <div style={{ marginTop: '32px', borderTop: '1px solid var(--border)', paddingTop: '24px' }}>
-          <p style={{ textAlign: 'center', fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '12px' }}>FOR DEMO / DEVELOPMENT ONLY</p>
-          <div style={{ display: 'flex', gap: '8px', flexDirection: 'column' }}>
-            <button onClick={() => bypassLogin('parent')} className="btn-secondary" style={{ padding: '8px' }}>Quick Login: Parent</button>
-            <button onClick={() => bypassLogin('driver')} className="btn-secondary" style={{ padding: '8px' }}>Quick Login: Driver</button>
-            <button onClick={() => bypassLogin('admin')} className="btn-secondary" style={{ padding: '8px' }}>Quick Login: Admin</button>
+        <div className="mt-8 pt-6 border-t border-gray-100 dark:border-gray-800">
+          <p className="text-xs text-center text-gray-400 font-medium tracking-wider mb-4 uppercase">
+            For Demo / Development Only
+          </p>
+          <div className="flex flex-col gap-2">
+            <button onClick={() => bypassLogin('parent')} className="btn-secondary py-2 text-sm">Quick Login: Parent</button>
+            <button onClick={() => bypassLogin('driver')} className="btn-secondary py-2 text-sm">Quick Login: Driver</button>
+            <button onClick={() => bypassLogin('admin')} className="btn-secondary py-2 text-sm">Quick Login: Admin</button>
           </div>
         </div>
       </div>

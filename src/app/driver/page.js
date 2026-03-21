@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { database } from '@/lib/firebase';
-import { ref, update, set } from 'firebase/database';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function DriverDashboard() {
   const [tripActive, setTripActive] = useState(false);
@@ -10,45 +9,49 @@ export default function DriverDashboard() {
   const [error, setError] = useState(null);
   const [watchId, setWatchId] = useState(null);
 
-  const busId = "bus_101"; // In real scenario, fetched from authenticated user's profile
+  // In production, fetch bus_id based on the driver's assignment
+  const busId = "bus_101"; 
 
-  // Automatically fetch exact location dynamically via browser API
   const startTracking = () => {
     if (!navigator.geolocation) {
       setError("Geolocation is not supported by your browser");
       return;
     }
-
     setTripActive(true);
     setError(null);
 
-    // Watch location continuously
     const id = navigator.geolocation.watchPosition(
-      (position) => {
+      async (position) => {
         const payload = {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
           speed: position.coords.speed || 0,
-          timestamp: Date.now()
         };
         setLocation(payload);
         
-        // Push exact live location to Firebase Realtime Database
-        update(ref(database, `buses/${busId}`), {
-          lastLocation: payload,
-          status: 'in_transit',
-          updatedAt: payload.timestamp
-        }).catch(err => setError("Failed to sync location to map"));
+        // Push exact live location to Supabase DB (Upsert on bus_id)
+        // Note: The schema defines bus_id as UNIQUE or we can just insert and let 
+        // real-time subscribers grab the latest insert. We will insert for historical tracking,
+        // or upsert if we made bus_id unique in bus_locations.
+        // Assuming bus_locations is an append-only log or we just upsert the latest block.
+        // Wait, the schema from earlier: `bus_locations` has a UUID id and bus_id. So it's an append log if we insert.
+        // But for "live tracking," we usually update a single row to avoid massive DB growth, or just insert.
+        // I will do an INSERT so admins can see history, and parents listen to the latest.
+        const { error: dbError } = await supabase
+          .from('bus_locations')
+          .insert({
+            bus_id: busId,
+            latitude: payload.lat,
+            longitude: payload.lng,
+          });
+          
+        if (dbError) setError("Failed to sync location: " + dbError.message);
       },
       (err) => {
-        setError(`Location access denied. Please allow location tracking. (${err.message})`);
+        setError(`Location access denied. (${err.message})`);
         setTripActive(false);
       },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: 10000
-      }
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
     );
     setWatchId(id);
   };
@@ -59,24 +62,25 @@ export default function DriverDashboard() {
       navigator.geolocation.clearWatch(watchId);
       setWatchId(null);
     }
-    // Update DB status to idle
-    update(ref(database, `buses/${busId}`), {
-      status: 'idle',
-      updatedAt: Date.now()
-    }).catch(err => console.error(err));
+    supabase.from('notifications').insert({
+      bus_id: busId,
+      message: 'Bus has ended its trip natively',
+      type: 'info'
+    });
   };
 
   const triggerEmergencyAlert = async () => {
     if (window.confirm("Are you sure you want to trigger an emergency alert?")) {
-      await update(ref(database, `buses/${busId}`), {
-        status: 'emergency',
-        updatedAt: Date.now()
+      const { error } = await supabase.from('notifications').insert({
+        bus_id: busId,
+        message: '🚨 EMERGENCY ALERT TRIGGERED BY DRIVER',
+        type: 'emergency',
       });
-      alert('Emergency alert sent to parents and admins.');
+      if (error) setError(error.message);
+      else alert('Emergency alert pushed immediately.');
     }
   };
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (watchId !== null) navigator.geolocation.clearWatch(watchId);
@@ -84,67 +88,61 @@ export default function DriverDashboard() {
   }, [watchId]);
 
   return (
-    <div className="container" style={{ maxWidth: '600px', margin: '0 auto' }}>
-      <div className="glass-card fade-in" style={{ backgroundColor: 'var(--bg-primary)' }}>
-        
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
-          <div>
-            <h2 style={{ fontSize: '20px', fontWeight: '600', marginBottom: '4px' }}>Bus Focus: {busId}</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ 
-                height: '10px', width: '10px', borderRadius: '50%', 
-                backgroundColor: tripActive ? 'var(--success)' : 'var(--text-secondary)' 
-              }}></span>
-              <span style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-                {tripActive ? 'Currently Transmitting live' : 'Trip not started'}
-              </span>
-            </div>
+    <div className="glass-card fade-in">
+      
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h2 className="text-xl font-bold mb-1">Bus Focus: {busId}</h2>
+          <div className="flex items-center gap-2">
+            <span className={`w-2.5 h-2.5 rounded-full ${tripActive ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`}></span>
+            <span className="text-sm font-medium text-gray-500">
+              {tripActive ? 'Transmitting Live' : 'Trip Idle'}
+            </span>
           </div>
         </div>
+      </div>
 
-        {error && (
-          <div style={{ color: 'var(--error)', background: 'rgba(239, 68, 68, 0.1)', padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '14px' }}>
-            {error}
-          </div>
+      {error && (
+        <div className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 text-red-600 dark:text-red-400 p-4 rounded-xl text-sm mb-6">
+          {error}
+        </div>
+      )}
+
+      <div className="bg-gray-50 dark:bg-[#111] p-5 rounded-2xl mb-8 border border-gray-100 dark:border-gray-800">
+         <h3 className="text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider">
+           Current Coordinates
+         </h3>
+         <div className="flex gap-8 font-mono text-lg">
+           <div>
+             <div className="text-[10px] text-gray-500 tracking-widest mb-1">LATITUDE</div>
+             <div className="font-medium">{location ? location.lat.toFixed(6) : '--.------'}</div>
+           </div>
+           <div>
+             <div className="text-[10px] text-gray-500 tracking-widest mb-1">LONGITUDE</div>
+             <div className="font-medium">{location ? location.lng.toFixed(6) : '--.------'}</div>
+           </div>
+         </div>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        {!tripActive ? (
+          <button onClick={startTracking} className="btn-primary py-4 text-lg">
+             Start Trip & Share Location
+          </button>
+        ) : (
+          <button onClick={stopTracking} className="w-full bg-red-50 dark:bg-red-500/10 text-red-600 font-bold py-4 rounded-xl transition-all hover:bg-red-100 dark:hover:bg-red-500/20 border border-red-200 dark:border-red-500/20">
+             End Trip
+          </button>
         )}
 
-        <div style={{ backgroundColor: 'var(--bg-secondary)', padding: '20px', borderRadius: '12px', marginBottom: '24px' }}>
-           <h3 style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-             Current Coordinates
-           </h3>
-           <div style={{ display: 'flex', gap: '16px', fontFamily: 'monospace', fontSize: '16px' }}>
-             <div>
-               <div style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>LATITUDE</div>
-               <div>{location ? location.lat.toFixed(6) : '--.------'}</div>
-             </div>
-             <div>
-               <div style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>LONGITUDE</div>
-               <div>{location ? location.lng.toFixed(6) : '--.------'}</div>
-             </div>
-           </div>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {!tripActive ? (
-            <button onClick={startTracking} className="btn-primary" style={{ padding: '18px' }}>
-               Start Trip & Share Location
-            </button>
-          ) : (
-            <button onClick={stopTracking} className="btn-secondary" style={{ padding: '18px', color: 'var(--error)', borderColor: 'var(--error)' }}>
-               End Trip
-            </button>
-          )}
-
-          <button 
-             onClick={triggerEmergencyAlert}
-             className="btn-secondary" 
-             style={{ padding: '16px', backgroundColor: 'rgba(239, 68, 68, 0.05)', color: 'var(--error)', border: '1px solid transparent' }}
-          >
-             🚨 Trigger Emergency Alert
-          </button>
-        </div>
-
+        <button 
+           onClick={triggerEmergencyAlert}
+           className="w-full bg-transparent border border-red-200 dark:border-red-900 text-red-500 font-bold py-4 rounded-xl transition-all hover:bg-red-50 dark:hover:bg-red-900/20 mt-4"
+        >
+           🚨 Trigger Emergency
+        </button>
       </div>
+
     </div>
   );
 }

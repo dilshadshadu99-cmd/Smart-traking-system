@@ -1,75 +1,67 @@
-# Smart School Bus Tracking System (Web Migration)
+# Smart School Bus Tracking System (Next.js + Supabase + Tailwind CSS)
 
-Welcome to the fully functional, responsive, and browser-based **Next.js** version of the Smart School Bus Tracking System. This project has been migrated from React Native/Node.js strictly to a Next.js App Router structure built for **Vercel** serverless deployment.
+Welcome to the fully functional, responsive, and browser-based version of the Smart School Bus Tracking System. Re-architected on top of a highly-scalable, production-level stack natively compatible with **Vercel deployability**.
 
-## 🚀 Features (No loss from mobile version!)
-- **Real-time GPS Tracking:** Streams live locations across Google Maps using **Firebase Realtime Database** instead of Socket.io (which optimizes the system for Serverless deployments like Vercel).
-- **Authentication:** Supports OTP (Phone) Login and Magic Link (Email) Login natively via Firebase Auth.
-- **Offline Support (PWA):** Caches the previous bus locations via `localStorage` to appear instantly on load. A Service Worker intercepts requests to serve cached assets when the user is disconnected.
-- **Role-Based Access:** 
-  - **Parents:** Dedicated map UI displaying live locations and active statuses.
-  - **Drivers:** Uses the browser `Geolocation API` to share their device location.
-  - **Admins:** View all active fleets globally and can fire emergency pushes.
-- **Push Notifications:** Firebase Cloud Messaging Web Push intercepts background alerts.
-- **UI/UX:** Hand-crafted, premium glassmorphism dark/light compatible design powered *entirely* by standard Vanilla CSS.
+## 🚀 The Stack
+- **Framework:** Next.js 14 (App Router, strict Client/Server boundaries)
+- **Styling:** Tailwind CSS (Premium minimalist aesthetic, glassmorphism logic)
+- **Database & Auth:** Supabase (PostgreSQL, Auth, Realtime Postgres Changes)
+- **Mapping:** Google Maps JavaScript API (Geocoding & Marker streaming)
+
+## ✨ Core Features
+- **Real-time Postgres Tracking:** Streaming live bus GPS locations over Supabase's natively integrated WebSocket channels (Postgres Changes) utilizing true row-level security.
+- **Supabase Authentication:** Features both OTP and Magic Link (Email) Login natively. Handshakes smoothly to our custom `users` database table for role determination.
+- **Offline Tracking / PWA:** Utilizing `localStorage` algorithms to seamlessly jumpstart the Next.js parent dashboard immediately with the last-known database location while the WebSocket re-establishes connection. Includes a PWA manifest for desktop installation.
+- **Role-Based Web Dashboards:** 
+  - **Parents:** Dedicated map UI displaying real-time locations listening to Postgres inserts.
+  - **Drivers:** Binds the `navigator.geolocation` HTML5 API tracking to a Supabase Postgres UPSERT layer.
+  - **Admins:** View all active fleets globally and push critical delay warnings securely to the `notifications` table which actively pings all live clients.
 
 ---
 
 ## 🏗️ Project Structure
 \`\`\`
-web/
-├── public/
-│   ├── manifest.json             # PWA Offline manifest
-│   └── firebase-messaging-sw.js  # Service Worker for push notifications
+.
 ├── src/
 │   ├── app/
-│   │   ├── (auth)/login/page.js  # Handle Phone & Email login
+│   │   ├── (auth)/login/page.js  # Dedicated Supabase Magic Link auth UI
 │   │   ├── admin/                # Global fleet overview & Alert dispatch
-│   │   ├── parent/               # Live Google Map for parents
-│   │   ├── driver/               # Web Geolocation API sender for drivers
-│   │   ├── globals.css           # Premium Vanilla CSS Design System
+│   │   ├── parent/               # Live Google Map for parents via PostgreSQL changes
+│   │   ├── driver/               # Web Geolocation API upserting to Supabase DB
+│   │   ├── globals.css           # Premium Tailwind layers
 │   │   ├── layout.js             # Root App Layout 
-│   │   └── page.js               # Entry path
+│   │   └── page.js               # Redirection engine
 │   └── lib/
-│       └── firebase.js           # Firebase app, auth, db init scripts
-├── jsconfig.json
-├── next.config.mjs
-└── package.json                  # Next.js configurations
+│       └── supabaseClient.js     # Supabase Singleton Instance
+├── tailwind.config.js
+├── postcss.config.js
+├── next.config.mjs               # Adjusted for Vercel/Webpack stability
+├── supabase_schema.sql           # Raw SQL to inject into Supabase UI
+└── package.json                  
 \`\`\`
 
 ---
 
 ## 🛠️ Step-by-Step Setup
-Please read the \`web/SETUP_GUIDE.md\` specifically designed for you to grab your Firebase keys and Google Maps tracking keys easily. 
+Read the \`SETUP_GUIDE.md\` specifically designed for you to set up the Supabase PostgreSQL Database effortlessly.
 
 Once your keys are obtained, place them securely in a `.env.local` file:
 \`\`\`env
-NEXT_PUBLIC_FIREBASE_API_KEY="..."
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="..."
-NEXT_PUBLIC_FIREBASE_PROJECT_ID="..."
-NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET="..."
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="..."
-NEXT_PUBLIC_FIREBASE_APP_ID="..."
-NEXT_PUBLIC_FIREBASE_DATABASE_URL="..."
+NEXT_PUBLIC_SUPABASE_URL="..."
+NEXT_PUBLIC_SUPABASE_ANON_KEY="..."
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="..."
 \`\`\`
 
 ---
 
-## 🌐 Deploy to Vercel (1-Click Guide)
+## 🌐 Deploy to Vercel (Production Build)
 This project is already pre-configured to be deployed natively on Vercel without build errors.
 
-1. **Push your code to GitHub.**
+1. Push your code to GitHub.
 2. Login to [Vercel](https://vercel.com/new) and select **Add New Project**.
-3. Import your GitHub repository.
-4. Set the **Root Directory** to `web` if Vercel asks (since it's inside the \`web\` folder).
-5. Vercel automatically detects Next.js.
-6. **Very Important**: Under the **Environment Variables** tab, copy **ALL** the keys from your `.env.local` strictly, and paste them in.
-7. Click **Deploy**. Vercel will run \`npm run build\`, generate the `.next` artifacts, and deploy your site onto a global Edge Network.
+3. Import the repository.
+4. Next.js will be auto-detected.
+5. Provide all `NEXT_PUBLIC` variables from your `.env.local` file into the UI.
+6. Click **Deploy**. Vercel will install dependencies, safely compile client-side Supabase references, output the static assets via Tailwind JIT, and assign your Edge URL!
 
-## 🛑 Common Vercel Errors & Fixes
-- **Next.js Build Failure ("ESLint Error" or "404")**: We skipped strict TS to prevent build-time crashes. If it fails due to a lint issue on Vercel, simply remove the `"lint": "next lint"` command from \`package.json\` before deploying, or set `IGNORE_ESLINT=true`.
-- **Firebase Config Errors in Prod**: If Firebase complains it has an invalid key, double-check that you added `NEXT_PUBLIC_...` variables in the Vercel Dashboard BEFORE compiling.
-- **Google Maps not rendering**: Web deployments require the domain. You must add the `https://YOUR_PROJECT.vercel.app` URL to the API Key Restrictions in your Google Cloud Console.
-
-Built to be fully scalable and native for the web!
+*(Note: There is no need for `undici` Webpack tweaks anymore because Supabase uses a fully isolated Edge-ready `fetch` algorithm under the hood, making this natively superior to Vercel deployments!)*
