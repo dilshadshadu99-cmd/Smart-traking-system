@@ -4,8 +4,13 @@ export const metadata = {
   title: 'Smart School Bus Tracker',
   description: 'Real-time school bus tracking for parents and admins',
   manifest: '/manifest.json',
+};
+
+export const viewport = {
   themeColor: '#000000',
-  viewport: 'width=device-width, initial-scale=1, maximum-scale=1',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 export default function RootLayout({ children }) {
